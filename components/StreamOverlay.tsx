@@ -1,6 +1,14 @@
 import React, { useEffect, useState } from 'react';
 
-export const StreamOverlay: React.FC = () => {
+interface StreamOverlayProps {
+  raisedHandsCount?: number;
+  hasCoHost?: boolean;
+}
+
+export const StreamOverlay: React.FC<StreamOverlayProps> = ({
+  raisedHandsCount = 0,
+  hasCoHost = false,
+}) => {
   const [viewers, setViewers] = useState(120);
 
   useEffect(() => {
@@ -21,8 +29,22 @@ export const StreamOverlay: React.FC = () => {
         <div className="bg-black/80 px-3 py-1 border border-[#00ffff] w-fit">
            <span className="text-[#00ffff] font-mono text-xs tracking-widest">{viewers} watching</span>
         </div>
+        {raisedHandsCount > 0 && (
+          <div className="bg-black/80 px-3 py-1 border border-[#ffff00] w-fit animate-pulse">
+            <span className="text-[#ffff00] font-mono text-xs tracking-widest">
+              ✋ {raisedHandsCount} raised
+            </span>
+          </div>
+        )}
+        {hasCoHost && (
+          <div className="bg-black/80 px-3 py-1 border border-[#00ff00] w-fit">
+            <span className="text-[#00ff00] font-mono text-xs tracking-widest">
+              🎙️ Co-hosting
+            </span>
+          </div>
+        )}
       </div>
-      
+
       <div className="bg-black/80 p-2 border border-white/20">
         <div className="text-[10px] text-white/50 font-mono">REC ●</div>
       </div>

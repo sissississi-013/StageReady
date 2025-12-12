@@ -5,6 +5,24 @@ export interface Comment {
   timestamp: number;
   color: string;
   isQuestion?: boolean;
+  wantsToRaiseHand?: boolean;
+  raiseHandReason?: string;
+}
+
+export interface RaisedHand {
+  id: string;
+  username: string;
+  reason: string;
+  timestamp: number;
+  color: string;
+  status: 'pending' | 'invited' | 'declined';
+}
+
+export interface CoHost {
+  username: string;
+  color: string;
+  status: 'connecting' | 'active' | 'disconnected';
+  avatarUrl: string;
 }
 
 export enum SummaryStyle {

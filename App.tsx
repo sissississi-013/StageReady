@@ -2,8 +2,11 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Button } from './components/Button';
 import { ChatStream } from './components/ChatStream';
 import { StreamOverlay } from './components/StreamOverlay';
+import { RaisedHandsPanel } from './components/RaisedHandsPanel';
+import { CoHostWindow } from './components/CoHostWindow';
 import { generateLiveComments, generateSummary } from './services/geminiService';
-import { Comment, StreamStatus, SummaryStyle } from './types';
+import { createCoHostAgent, COHOST_SYSTEM_PROMPT, COHOST_VOICES } from './services/elevenLabsService';
+import { Comment, StreamStatus, SummaryStyle, RaisedHand, CoHost } from './types';
 import { getRandomColor, blobToBase64 } from './utils';
 
 const App: React.FC = () => {
@@ -23,6 +26,12 @@ const App: React.FC = () => {
   const [isCopied, setIsCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Raised Hands & Co-Host State
+  const [raisedHands, setRaisedHands] = useState<RaisedHand[]>([]);
+  const [coHost, setCoHost] = useState<CoHost | null>(null);
+  const [coHostAgentId, setCoHostAgentId] = useState<string | null>(null);
+  const [isCreatingAgent, setIsCreatingAgent] = useState(false);
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -34,6 +43,17 @@ const App: React.FC = () => {
   const sourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const processorNodeRef = useRef<ScriptProcessorNode | null>(null);
   const audioChunksBufferRef = useRef<Float32Array[]>([]);
+
+  // Ref to track coHost state for closure access
+  const coHostRef = useRef<CoHost | null>(null);
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    coHostRef.current = coHost;
+  }, [coHost]);
+
+  // Ref to always have the latest fetchComments function
+  const fetchCommentsRef = useRef<((audioBase64: string) => Promise<void>) | null>(null);
 
   // Initialize Camera
   useEffect(() => {
@@ -68,6 +88,9 @@ const App: React.FC = () => {
     setAudioRecordedChunks([]);
     setSummary('');
     setIsCopied(false);
+    setRaisedHands([]);
+    setCoHost(null);
+    setCoHostAgentId(null);
 
     // 1. Setup Video Recorder
     // Prioritize MP4 with H264 for best compatibility if supported
@@ -160,7 +183,10 @@ const App: React.FC = () => {
         const wavBlob = encodeWAV(result, audioContext.sampleRate);
         const base64 = await blobToBase64(wavBlob);
 
-        fetchComments(base64);
+        // Use ref to always call latest version of fetchComments
+        if (fetchCommentsRef.current) {
+            fetchCommentsRef.current(base64);
+        }
 
     }, 4000);
   };
@@ -210,18 +236,77 @@ const App: React.FC = () => {
     if (newCommentsData && newCommentsData.length > 0) {
         newCommentsData.forEach((c, index) => {
             setTimeout(() => {
-                setComments(prev => [
-                    ...prev,
-                    {
-                        ...c,
+                const color = getRandomColor();
+                const newComment: Comment = {
+                    ...c,
+                    id: crypto.randomUUID(),
+                    timestamp: Date.now(),
+                    color
+                };
+
+                setComments(prev => [...prev, newComment]);
+
+                // If comment includes raised hand and no active co-host, add to raisedHands
+                if (c.wantsToRaiseHand && c.raiseHandReason && !coHostRef.current) {
+                    setRaisedHands(prev => [...prev, {
                         id: crypto.randomUUID(),
+                        username: c.username,
+                        reason: c.raiseHandReason || 'Would like to join the conversation',
                         timestamp: Date.now(),
-                        color: getRandomColor()
-                    }
-                ]);
+                        color,
+                        status: 'pending'
+                    }]);
+                }
             }, index * 800 + Math.random() * 500);
         });
     }
+  };
+
+  // Keep fetchComments ref updated
+  useEffect(() => {
+    fetchCommentsRef.current = fetchComments;
+  });
+
+  // --- Raised Hands & Co-Host Handlers ---
+
+  const handleInviteCoHost = async (hand: RaisedHand) => {
+    setIsCreatingAgent(true);
+
+    try {
+      const agentId = await createCoHostAgent({
+        name: `CoHost_${hand.username}_${Date.now()}`,
+        systemPrompt: COHOST_SYSTEM_PROMPT + `\n\nYour name is ${hand.username}. You raised your hand because: "${hand.reason}"`,
+        firstMessage: `Hey! Thanks for having me on. I raised my hand because ${hand.reason}`,
+        voiceId: COHOST_VOICES[Math.floor(Math.random() * COHOST_VOICES.length)].id,
+      });
+
+      setCoHostAgentId(agentId);
+      setCoHost({
+        username: hand.username,
+        color: hand.color,
+        status: 'connecting',
+        avatarUrl: `https://api.dicebear.com/7.x/personas/svg?seed=${hand.username}`,
+      });
+
+      setRaisedHands(prev =>
+        prev.map(h => h.id === hand.id ? { ...h, status: 'invited' as const } : h)
+      );
+    } catch (error) {
+      console.error('Failed to create co-host agent:', error);
+      setError('Failed to invite co-host. Please try again.');
+      setTimeout(() => setError(null), 3000);
+    } finally {
+      setIsCreatingAgent(false);
+    }
+  };
+
+  const handleDismissHand = (handId: string) => {
+    setRaisedHands(prev => prev.filter(h => h.id !== handId));
+  };
+
+  const handleCoHostDisconnect = () => {
+    setCoHost(null);
+    setCoHostAgentId(null);
   };
 
   // --- Post Stream Actions ---
@@ -303,7 +388,31 @@ const App: React.FC = () => {
           <div className="absolute inset-0 pointer-events-none opacity-10 bg-[url('https://media.giphy.com/media/oEI9uBYSzLpBK/giphy.gif')] bg-cover mix-blend-screen" />
           <div className="absolute inset-0 border-[0.5px] border-white/5 pointer-events-none" />
 
-          {status === 'streaming' && <StreamOverlay />}
+          {status === 'streaming' && (
+            <>
+              <StreamOverlay
+                raisedHandsCount={raisedHands.filter(h => h.status === 'pending').length}
+                hasCoHost={!!coHost}
+              />
+
+              {/* Raised Hands Panel */}
+              <RaisedHandsPanel
+                raisedHands={raisedHands}
+                onInvite={handleInviteCoHost}
+                onDismiss={handleDismissHand}
+                disabled={isCreatingAgent || !!coHost}
+              />
+
+              {/* Co-Host Window */}
+              {coHost && coHostAgentId && (
+                <CoHostWindow
+                  coHost={coHost}
+                  agentId={coHostAgentId}
+                  onDisconnect={handleCoHostDisconnect}
+                />
+              )}
+            </>
+          )}
 
           {/* Controls Overlay (Bottom of Video) */}
           <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-black via-black/50 to-transparent flex justify-center gap-4 transition-transform duration-300 translate-y-2 group-hover:translate-y-0">

@@ -4,13 +4,17 @@ import { Comment, SummaryStyle } from "../types";
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 const COMMENT_SYSTEM_PROMPT = `
-You are simulating a live stream audience chat. 
+You are simulating a live stream audience chat.
 You will receive audio chunks of a streamer talking.
 Your goal is to generate 1 to 3 realistic, short viewer comments based SPECIFICALLY on what is being said in the audio.
 - If the audio is silent or unclear, return an empty list.
 - Mix of supportive fans, curious askers, and casual observers.
 - Use internet slang appropriately but don't overdo it.
 - 30% of comments should be questions prompting the streamer to say more.
+- 10-15% of commenters should "raise their hand" wanting to join as co-host.
+  - Only have them raise hand if they have a genuinely interesting question or insight to share.
+  - Provide a brief reason why they want to speak (1 sentence).
+  - Set wantsToRaiseHand to true and provide raiseHandReason.
 - Generate realistic usernames.
 - Return ONLY JSON.
 `;
@@ -47,7 +51,9 @@ export const generateLiveComments = async (audioBase64: string): Promise<Omit<Co
             properties: {
               username: { type: Type.STRING },
               text: { type: Type.STRING },
-              isQuestion: { type: Type.BOOLEAN }
+              isQuestion: { type: Type.BOOLEAN },
+              wantsToRaiseHand: { type: Type.BOOLEAN },
+              raiseHandReason: { type: Type.STRING }
             },
             required: ["username", "text"]
           }
@@ -57,7 +63,7 @@ export const generateLiveComments = async (audioBase64: string): Promise<Omit<Co
 
     const text = response.text;
     if (!text) return [];
-    
+
     return JSON.parse(text);
   } catch (error) {
     console.error("Error generating comments:", error);
