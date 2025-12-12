@@ -1,0 +1,8 @@
+{
+  "name": "LiveRoom",
+  "description": "A glitch-pop styled live stream simulator where Gemini generates real-time audience reactions to your video feed.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
