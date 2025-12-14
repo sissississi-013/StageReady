@@ -79,9 +79,9 @@ npm run preview
 
 ## Demo Video
 
-> **[Insert Demo Video Link Here]**
+> **[(https://youtu.be/1DkC9Gb4RRM)]**
 >
-> A short demo video (≤ 2 minutes) showcasing the main features:
+> Main features demostrated by Sissi hosting a stream :)
 > 1. Starting a live stream practice session
 > 2. AI-generated comments responding to speech
 > 3. Audience members raising their hands
